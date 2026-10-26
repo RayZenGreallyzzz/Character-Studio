@@ -1,0 +1,6 @@
+Phoenix Character Studio
+Version: 0.1.0-alpha
+Delivery: source archive and GitHub Actions Android APK workflow (APK not prebuilt)
+Base: GLB / skeleton
+Feature status: experimental, targeted user testing required
+Date: 2026-10-26

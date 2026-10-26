@@ -1,0 +1,6 @@
+{
+  "appId": "com.phoenix.characterstudio",
+  "appName": "Phoenix Character Studio",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" }
+}
