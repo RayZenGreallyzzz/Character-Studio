@@ -24,8 +24,9 @@ export function addBoneChain(root,parent,slot,count=3,side='',scale=1){
   for(let i=0;i<count;i++){
     const bone=new THREE.Bone();
     bone.name=uniqueBoneName([...all,...created],prefix+(side?'_'+side:'')+'_'+String(i+1).padStart(2,'0'));
+    const amplitude=({breast:2,tail:7,wing:3,ear:2,hair:3,face:0,cloth:2})[slot]??0;
     bone.userData.pcs={slot,extra:true,side,
-      motion:{enabled:false,amplitude:5,frequency:1.3,phase:side==='R'?1:0}};
+      motion:{enabled:amplitude>0,amplitude,frequency:1.3,phase:side==='R'?1:0}};
     // The desired target is in the imported character's WORLD frame,
     // NOT in the (arbitrarily rotated) local axes of this parent.
     from.updateWorldMatrix(true,false);
