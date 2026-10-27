@@ -32,7 +32,7 @@ export function anatomicalFrame(root){
   if(front.length()<.001)front.set(0,0,1);
   const bounds=new THREE.Box3().setFromObject(root);
   const size=bounds.getSize(new THREE.Vector3());
-  const scale=Math.max(.15,Math.min(30,size.length()/2.3));
+  const scale=Math.max(.15,Math.min(30,Math.max(size.length()/2.3,np.distanceTo(hp)*1.2)));
   const shoulders=leftBone&&rightBone?
     point(rightBone).distanceTo(point(leftBone)):.38*scale;
   const shoulderWidth=Math.max(.2*scale,Math.min(.7*scale,shoulders));
