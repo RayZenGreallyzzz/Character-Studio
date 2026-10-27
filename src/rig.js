@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {anatomicalFrame,anatomicalTargets,pointAnatomyMask} from './rig-anatomy.js';
 import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles} from './rig-utils.js';
 
 export function getBones(root) {
@@ -12,23 +13,27 @@ export function getSkins(root) {
   return meshes;
 }
 export function getDefaultParent(root,slot) {return suggestParent(getBones(root),slot);}
-export function addBoneChain(root,parent,slot,count=3,side='',scale=1) {
-  if (!parent || !parent.isBone) throw new Error('Сначала выбери родительскую кость');
-  const available=getBones(root);
-  let from=parent;
-  const created=[];
+export function addBoneChain(root,parent,slot,count=3,side='',scale=1){
+  if (!parent?.isBone) throw new Error('Сначала выбери родительскую кость');
+  const created=[],all=getBones(root);
   const prefix=({hair:'Hair',tail:'Tail',breast:'Breast',face:'Face',ear:'Ear',wing:'Wing',cloth:'Cloth'})[slot]||'Extra';
-  const x=side==='L'?-1:side==='R'?1:0;
-  const first={hair:[0,.12,0],tail:[0,-.06,-.11],breast:[x*.11,0,.12],face:[0,.05,.09],ear:[x*.12,.12,0],wing:[x*.16,.08,-.08],cloth:[x*.09,-.12,0]}[slot] || [0,.1,0];
-  const follow={hair:[0,.09,0],tail:[0,-.10,-.05],breast:[0,0,.05],face:[0,.04,0],ear:[0,.07,0],wing:[x*.10,0,-.05],cloth:[0,-.12,0]}[slot]||[0,.08,0];
-  for(let i=0;i<Math.max(1,Math.min(count,15));i++) {
+  count=Math.max(1,Math.min(15,Math.trunc(count)||1));
+  const frame=anatomicalFrame(root);
+  const targets=anatomicalTargets(frame,slot,side,count);
+  let from=parent;
+  for(let i=0;i<count;i++){
     const bone=new THREE.Bone();
-    const name=uniqueBoneName(available.concat(created),`${prefix}${side?`_${side}`:''}_${String(i+1).padStart(2,'0')}`);
-    bone.name=name;
-    const v=(i===0?first:follow);
-    bone.position.set(v[0]*scale,v[1]*scale,v[2]*scale);
-    bone.userData.pcs={slot,extra:true,side,motion:{enabled:false,amplitude:5,frequency:1.3,phase: side==='R'?1:0}};
-    from.add(bone); from=bone; created.push(bone);
+    bone.name=uniqueBoneName([...all,...created],prefix+(side?'_'+side:'')+'_'+String(i+1).padStart(2,'0'));
+    bone.userData.pcs={slot,extra:true,side,
+      motion:{enabled:false,amplitude:5,frequency:1.3,phase:side==='R'?1:0}};
+    // The desired target is in the imported character's WORLD frame,
+    // NOT in the (arbitrarily rotated) local axes of this parent.
+    from.updateWorldMatrix(true,false);
+    bone.position.copy(from.worldToLocal(targets[i].clone()));
+    from.add(bone);
+    from.updateMatrixWorld(true);
+    created.push(bone);
+    from=bone;
   }
   root.updateMatrixWorld(true);
   return created;
@@ -89,6 +94,8 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
   if(!bone?.isBone) throw Error('Сначала создай кость груди');
   root.updateMatrixWorld(true);
   const bonePos=bone.getWorldPosition(new THREE.Vector3());
+  const frame=anatomicalFrame(root);
+  const slot=bone.userData?.pcs?.slot||'other',side=bone.userData?.pcs?.side||'';
   let count=0, changedMeshes=0;
   for(const mesh of getSkins(root)) {
     // Do not modify shared source geometry that other meshes may reference.
@@ -121,7 +128,8 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
     for(let v=0;v<pos.count;v++) {
       // Using vertex bind coordinates, not a deformed animated frame.
       point.fromBufferAttribute(pos,v).applyMatrix4(mesh.matrixWorld);
-      const w=smoothWeight(point.distanceTo(bonePos),radius)*strength;
+      const mask=pointAnatomyMask(point,frame,slot,side);
+      const w=mask*smoothWeight(point.distanceTo(bonePos),radius)*strength;
       if(w<.0005) continue;
       const base=[];
       for(let k=0;k<4;k++) base.push({bone:resultIds[v*4+k],weight:resultWeights[v*4+k]});
