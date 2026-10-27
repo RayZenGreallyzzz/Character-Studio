@@ -19,7 +19,7 @@ app.innerHTML=`
 <label class="btn">Открыть проект<input id="project-file" type="file" accept=".pcs,.json" hidden></label>
 <button id="save-project">Проект</button><button class="btn primary" id="export">Экспорт GLB</button></div></header>
 <div class="main-layout"><aside class="sidebar"><div class="scroll">
-<section><div class="heading">01 / Скелет</div><label>Родительская кость<select id="parent-bone"></select></label><label>Новая часть<select id="slot"><option value="hair">Волосы</option><option value="tail">Хвост</option><option value="breast">Грудь</option><option value="face">Лицо</option><option value="ear">Уши</option><option value="wing">Крылья</option><option value="cloth">Одежда / юбка</option></select></label><div class="line"><label>Количество костей<input id="count" type="number" min="1" max="15" value="3"/></label><label>Сторона<select id="side"><option value="">Центр</option><option value="L">Лево</option><option value="R">Право</option></select></label></div><button class="btn wide" id="add-chain">+ Создать цепочку</button><button class="btn wide" id="breasts">+ Пара костей груди L/R</button></section>
+<section><div class="heading">01 / Скелет</div><label>Родительская кость<select id="parent-bone"></select></label><label>Новая часть<select id="slot"><option value="hair">Волосы</option><option value="tail">Хвост</option><option value="breast">Грудь</option><option value="face">Лицо</option><option value="ear">Уши</option><option value="wing">Крылья</option><option value="cloth">Одежда / юбка</option></select></label><div class="line"><label>Количество костей<input id="count" type="number" min="1" max="15" value="3"/></label><label>Сторона<select id="side"><option value="">Центр</option><option value="L">Лево</option><option value="R">Право</option></select></label></div><label class="check"><input id="auto-parent" type="checkbox" checked> Автоматически выбрать правильную родительскую кость</label><button class="btn wide" id="add-chain">+ Создать цепочку</button><button class="btn wide" id="breasts">+ Пара костей груди L/R</button><p class="hint">Грудь, уши и крылья при выборе «Центр» создаются симметричной парой. Кости без весов не деформируют тело: для дополнительных деталей нужно назначить веса или привязать меш к цепочке.</p></section>
 <section><div class="heading">02 / Детали и кости</div><label>Выбранный элемент<select id="selection"></select></label><label>Цепочка для деформации<select id="rig-chain"></select></label><button class="btn wide" id="rig-detail">Привязать деталь к цепочке</button><button class="btn wide" id="attach">Прикрепить деталь к кости</button><div class="subhead">Позиция / поворот / масштаб</div><div id="transform-controls"></div></section>
 <section><div class="heading">03 / Автовеса тела</div><p class="hint">Для новых костей груди и других мягких частей тела. Применять в исходной позе персонажа.</p><label>Радиус влияния, м<input id="radius" type="number" min="0.01" step="0.01" value="0.18"></label><label>Сила влияния (0–0.95)<input id="strength" type="number" min="0" max="0.95" step="0.05" value="0.55"></label><button class="btn wide" id="auto-weights">Назначить веса выбранной кости</button></section>
 <section><div class="heading">04 / Вторичное движение</div><label class="check"><input id="motion-enabled" type="checkbox"> Автоматическое покачивание</label><label>Амплитуда, °<input id="amplitude" type="range" min="0" max="35" step="1" value="5"><span id="amplitude-out">5°</span></label><label>Частота, Гц<input id="frequency" type="range" min="0.2" max="4" step="0.1" value="1.3"><span id="frequency-out">1.3</span></label><p class="hint">Движение запекается в ключи выбранных анимаций.</p></section>
@@ -79,7 +79,7 @@ function updateTimeline(){const duration=currentDuration();$('time').max=String(
 function pause(){state.playing=false;$('play').textContent='▶';}
 function setTime(t){state.time=Math.max(0,Math.min(Number(t)||0,currentDuration()));if(state.mixer){state.mixer.stopAllAction();const clip=currentClip();if(clip){const action=state.mixer.clipAction(clip);action.play();state.mixer.setTime(state.time);}}applyExtraPose(state.extras,state.activeClip,state.time,state.animationData);updateTimeline();}
 function startPlayback(){if(!state.root)return;state.playing=!state.playing;$('play').textContent=state.playing?'❚❚':'▶';state.clock.getDelta();}
-function createChains({slot,side='',count=3,parentOverride=null}={}){if(!state.root)throw Error('Загрузи GLB со скелетом');pause();setTime(0);const parent=parentOverride||currentBones().find(b=>b.uuid===$('parent-bone').value)||getDefaultParent(state.root,slot);const arr=addBoneChain(state.root,parent,slot,count,side,figureScale());state.extras.push(...arr);for(const b of arr)b.userData.pcs.baseEuler=[0,0,0];state.selected=arr[0];refreshAll();return arr;}
+function createChains({slot,side='',count=3,parentOverride=null}={}){if(!state.root)throw Error('Загрузи GLB со скелетом');pause();setTime(0);for(const mesh of getSkins(state.root))if(mesh.userData.pcsMainSkin)mesh.skeleton.pose();state.root.updateMatrixWorld(true);const parent=parentOverride||($('auto-parent').checked?getDefaultParent(state.root,slot):currentBones().find(b=>b.uuid===$('parent-bone').value))||getDefaultParent(state.root,slot);const arr=addBoneChain(state.root,parent,slot,count,side,figureScale());state.extras.push(...arr);for(const b of arr)b.userData.pcs.baseEuler=[0,0,0];state.selected=arr[0];refreshAll();return arr;}
 function saveKeyframe(){const b=state.selected;if(!b?.isBone||!b.userData.pcs?.extra)throw Error('Выбери дополнительную кость');const name=state.activeClip;state.animationData[name]??={};state.animationData[name][b.name]??=[];const frames=state.animationData[name][b.name];const wave=secondaryAngles(state.time,b.userData.pcs.motion);const base=b.userData.pcs.baseEuler||[0,0,0];const pose=[b.rotation.x,b.rotation.y,b.rotation.z].map((v,i)=>THREE.MathUtils.radToDeg(v-wave[i])-base[i]);const entry={time:Math.round(state.time*1000)/1000,euler:pose};const old=frames.findIndex(f=>Math.abs(f.time-entry.time)<.005);if(old>=0)frames[old]=entry;else frames.push(entry);say(`Ключ ${b.name} записан: ${entry.time.toFixed(2)} сек`);}
 function updateMotion(){const b=state.selected;if(!b?.userData.pcs?.extra){say('Сначала выбери дополнительную кость','error');return;}b.userData.pcs.motion={...b.userData.pcs.motion,enabled:$('motion-enabled').checked,amplitude:Number($('amplitude').value),frequency:Number($('frequency').value)};$('amplitude-out').textContent=$('amplitude').value+'°';$('frequency-out').textContent=$('frequency').value;setTime(state.time);}
 function clipForExport(original){const tracks=[...original.tracks,...animationTracksForExtras(state.extras,original.name,original.duration,state.animationData)];return new THREE.AnimationClip(original.name,original.duration,tracks);}
@@ -113,8 +113,43 @@ $('project-file').addEventListener('change',async e=>{const f=e.target.files[0];
 $('save-project').onclick=()=>saveProject().catch(err);$('export').onclick=()=>exportGLB().catch(err);
 $('selection').onchange=()=>{const v=$('selection').value;state.selected=v.startsWith('bone:')?currentBones().find(b=>b.uuid===v.slice(5)):state.accessories.find(a=>a.id===v.slice(7))?.group;refreshSelection();};
 $('slot').onchange=()=>{const b=getDefaultParent(state.root,$('slot').value);if(b)$('parent-bone').value=b.uuid;};
-$('add-chain').onclick=()=>{try{const a=createChains({slot:$('slot').value,side:$('side').value,count:Number($('count').value)});say(`${a.length} костей добавлено. Выбери и настрой положение.`);}catch(e){err(e);}};
-$('breasts').onclick=()=>{try{pause();setTime(0);$('slot').value='breast';const chest=getDefaultParent(state.root,'breast');if(!chest)throw Error('Кость груди не найдена');const a=createChains({slot:'breast',side:'L',count:1,parentOverride:chest});const b=createChains({slot:'breast',side:'R',count:1,parentOverride:chest});state.selected=a[0];refreshAll();say(`Добавлены ${a[0].name} и ${b[0].name}. Настрой положение и назначь веса по очереди.`);}catch(e){err(e);}};
+// Breast skin gets an actual influence automatically, not just decorative bones.
+function autoSkinNewBreast(bone){
+  for(const mesh of getSkins(state.root))if(mesh.userData.pcsMainSkin)mesh.skeleton.pose();
+  state.root.updateMatrixWorld(true);
+  const radius=Math.max(.02,Number($('radius').value)||.18);
+  const strength=Math.min(.95,Math.max(0,Number($('strength').value)||.55));
+  const out=weightExistingSkin(state.root,bone,{radius,strength});
+  if(out.vertices){
+    state.weightOperations??=[];
+    state.weightOperations.push({bone:bone.name,radius,strength});
+  }
+  return out.vertices;
+}
+$('add-chain').onclick=()=>{try{
+  const slot=$('slot').value,side=$('side').value,count=Number($('count').value);
+  const paired=side===''&&['breast','ear','wing'].includes(slot);
+  let added=[];
+  if(paired){
+    for(const direction of ['L','R'])added.push(...createChains({slot,side:direction,count}));
+  }else added=createChains({slot,side,count});
+  let weighted=0;
+  if(slot==='breast')for(const bone of added.filter(b=>b.userData.pcs.slot==='breast'&&/_01(?:_|$)/.test(b.name)))weighted+=autoSkinNewBreast(bone);
+  state.selected=added[0];refreshAll();
+  say('Добавлено '+added.length+' костей'+(paired?' симметрично L/R':'')+
+    (slot==='breast'?' · автопривязано '+weighted+' вершин. Включи анимацию или покачивание для проверки.':' · Привяжи отдельную деталь или назначь веса, чтобы кости действительно двигали меш.'));
+}catch(e){err(e);}};
+$('breasts').onclick=()=>{try{
+  $('slot').value='breast';
+  const chest=getDefaultParent(state.root,'breast');
+  if(!chest)throw Error('Кость груди не найдена');
+  const left=createChains({slot:'breast',side:'L',count:1,parentOverride:chest});
+  const right=createChains({slot:'breast',side:'R',count:1,parentOverride:chest});
+  const influence=autoSkinNewBreast(left[0])+autoSkinNewBreast(right[0]);
+  state.selected=left[0];refreshAll();
+  say('Созданы парные кости груди слева и справа. Автовесов: '+influence+
+    ' вершин. Проверяй вращение и деформацию, а не только линии скелета.');
+}catch(e){err(e);}};
 $('attach').onclick=()=>{try{const item=selectedAccessory();if(!item)throw Error('Выбери импортированную деталь');const bone=currentBones().find(b=>b.uuid===$('parent-bone').value);if(!bone)throw Error('Выбери кость');if(item.rigged)throw Error('Деталь уже имеет скин. Повторное жёсткое крепление не поддерживается.');bone.attach(item.group);item.parent=bone.name;refreshSelection();say(`Деталь ${item.id} прикреплена к ${bone.name}`);}catch(e){err(e);}};
 $('rig-detail').onclick=()=>{try{const item=selectedAccessory();if(!item)throw Error('Выбери импортированную деталь');if(item.rigged)throw Error('Эта деталь уже имеет скин');const first=currentBones().find(b=>b.name===$('rig-chain').value);if(!first?.userData.pcs?.extra)throw Error('Выбери первую дополнительную кость цепочки');const chain=[];let b=first;while(b&&b.userData.pcs?.extra){chain.push(b);b=b.children.find(c=>c.isBone)||null;}pause();setTime(0);const n=skinAccessoryToChain(state.root,item.group,chain);item.rigged=true;item.chain=chain.map(b=>b.name);say(`Привязано ${n} вершин к ${chain.length} костям. Положение теперь изменяется костями.`);}catch(e){err(e);}};
 $('auto-weights').onclick=()=>{try{const b=state.selected;if(!b?.userData.pcs?.extra)throw Error('Выбери дополнительную кость');pause();setTime(0);for(const mesh of getSkins(state.root))if(mesh.userData.pcsMainSkin)mesh.skeleton.pose();state.root.updateMatrixWorld(true);const op={bone:b.name,radius:Number($('radius').value),strength:Number($('strength').value)};if(state.weightOperations?.some(o=>o.bone===b.name))throw Error('Этой кости веса уже назначены. Чтобы пересчитать, открой исходный проект и назначь заново.');const out=weightExistingSkin(state.root,b,op);state.weightOperations??=[];state.weightOperations.push(op);say(`Веса назначены: ${out.vertices} вершин на ${out.meshes} мешах. Проверь деформацию.`);}catch(e){err(e);}};
