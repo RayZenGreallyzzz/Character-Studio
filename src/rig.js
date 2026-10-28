@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles} from './rig-utils.js';
+import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles,existingTorsoWeight,shouldApplyBreastWeight} from './rig-utils.js';
 
 export function getBones(root) {
   const bones=[];
@@ -91,13 +91,13 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
   const bonePos=bone.getWorldPosition(new THREE.Vector3());
   let count=0, changedMeshes=0;
   for(const mesh of getSkins(root)) {
+    // Never copy, bind or rewrite non-body meshes. Garments retain original weights.
+    if(!mesh.userData.pcsMainSkin) continue;
     // Do not modify shared source geometry that other meshes may reference.
     if(!mesh.userData.pcsOwnGeometry){mesh.geometry=mesh.geometry.clone();mesh.userData.pcsOwnGeometry=true;}
     const geo=mesh.geometry;
     const si=geo.getAttribute('skinIndex'),sw=geo.getAttribute('skinWeight'),pos=geo.getAttribute('position');
     if(!si||!sw||!pos) continue;
-    // Exclude accessory meshes by design. Only preexisting body skins marked on import.
-    if(!mesh.userData.pcsMainSkin) continue;
     const currentBones=mesh.skeleton.bones;
     if(!currentBones.includes(bone)) {
       const all=[...currentBones,bone];
@@ -116,15 +116,25 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
         resultWeights[v*4+k]=read(sw,k);
       }
     }
-    const point=new THREE.Vector3();
+    const point=new THREE.Vector3(),parentPoint=new THREE.Vector3();
+    const breast=/^Breast[_L R-]/i.test(bone.name)||bone.userData.pcs?.slot==='breast';
+    const side=bone.userData.pcs?.side||(/^Breast_L/i.test(bone.name)?'L':/^Breast_R/i.test(bone.name)?'R':'');
+    const parentInverse=breast&&bone.parent?bone.parent.matrixWorld.clone().invert():null;
+    const boneLocalX=bone.position.x;
+    const boneNames=mesh.skeleton.bones.map(b=>b?.name||'');
     let localCount=0;
     for(let v=0;v<pos.count;v++) {
-      // Using vertex bind coordinates, not a deformed animated frame.
+      // Bind-pose positions only. Vertex weights are confined to actual geometry.
       point.fromBufferAttribute(pos,v).applyMatrix4(mesh.matrixWorld);
       const w=smoothWeight(point.distanceTo(bonePos),radius)*strength;
       if(w<.0005) continue;
       const base=[];
       for(let k=0;k<4;k++) base.push({bone:resultIds[v*4+k],weight:resultWeights[v*4+k]});
+      if(breast){
+        const torsoWeight=existingTorsoWeight(base,boneNames);
+        if(parentInverse)parentPoint.copy(point).applyMatrix4(parentInverse);
+        if(!shouldApplyBreastWeight({side,pointLocalX:parentPoint.x,boneLocalX,torsoWeight}))continue;
+      }
       const weights=normalizedTopFour(base,boneIndex,w);
       for(let k=0;k<4;k++) {
         resultIds[v*4+k]=weights[k]?.bone ?? 0;
