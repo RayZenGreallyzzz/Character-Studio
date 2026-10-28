@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {anatomicalFrame,anatomicalTargets,pointAnatomyMask} from './rig-anatomy.js';
-import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles} from './rig-utils.js';
+import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles,existingTorsoWeight,shouldApplyBreastWeight} from './rig-utils.js';
 
 export function getBones(root) {
   const bones=[];
@@ -99,13 +99,12 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
   const slot=bone.userData?.pcs?.slot||'other',side=bone.userData?.pcs?.side||'';
   let count=0, changedMeshes=0;
   for(const mesh of getSkins(root)) {
-    // Do not modify shared source geometry that other meshes may reference.
+    // Garments are skinned too: do not clone, rebind or touch their geometry.
+    if(!mesh.userData.pcsMainSkin) continue;
     if(!mesh.userData.pcsOwnGeometry){mesh.geometry=mesh.geometry.clone();mesh.userData.pcsOwnGeometry=true;}
     const geo=mesh.geometry;
     const si=geo.getAttribute('skinIndex'),sw=geo.getAttribute('skinWeight'),pos=geo.getAttribute('position');
     if(!si||!sw||!pos) continue;
-    // Exclude accessory meshes by design. Only preexisting body skins marked on import.
-    if(!mesh.userData.pcsMainSkin) continue;
     const currentBones=mesh.skeleton.bones;
     if(!currentBones.includes(bone)) {
       const all=[...currentBones,bone];
@@ -134,6 +133,13 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
       if(w<.0005) continue;
       const base=[];
       for(let k=0;k<4;k++) base.push({bone:resultIds[v*4+k],weight:resultWeights[v*4+k]});
+      if(slot==='breast'){
+        const torso=existingTorsoWeight(base,mesh.skeleton.bones.map(item=>item.name));
+        const parentPoint=point.clone().applyMatrix4(bone.parent.matrixWorld.clone().invert());
+        if(!shouldApplyBreastWeight({
+          side,pointLocalX:parentPoint.x,boneLocalX:bone.position.x,torsoWeight:torso
+        }))continue;
+      }
       const weights=normalizedTopFour(base,boneIndex,w);
       for(let k=0;k<4;k++) {
         resultIds[v*4+k]=weights[k]?.bone ?? 0;
