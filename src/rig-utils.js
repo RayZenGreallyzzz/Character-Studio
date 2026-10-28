@@ -98,7 +98,8 @@ export function existingTorsoWeight(influences,boneNames) {
 export function shouldApplyBreastWeight({side,pointLocalX,boneLocalX,torsoWeight,threshold=.45}) {
   if(torsoWeight<threshold)return false;
   // Only the correct half of the torso; keep a small midline blending band.
-  if(side==='L' && pointLocalX>Math.min(0,boneLocalX*.2)+.015)return false;
-  if(side==='R' && pointLocalX<Math.max(0,boneLocalX*.2)-.015)return false;
+  const sign=Math.abs(boneLocalX)>.001?Math.sign(boneLocalX):(side==='L'?-1:1);
+  const margin=.015;
+  if((side==='L'||side==='R') && sign*pointLocalX < -margin)return false;
   return true;
 }
