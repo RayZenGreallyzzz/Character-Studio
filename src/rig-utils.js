@@ -59,3 +59,46 @@ export function secondaryAngles(t, motion) {
   const phase=motion.phase||0;
   return [a*Math.sin(w*t+phase),0,a*.38*Math.sin(w*.63*t+phase+1.3)];
 }
+
+/** Only the selected anatomical body skin may be repainted by extra-body bones.
+ * A garment may be a SkinnedMesh too; this never makes it anatomical body skin.
+ */
+export function isLikelyGarmentName(value) {
+  return /(?:cloth|clothing|dress|skirt|shirt|sleeve|coat|jacket|pants?|trousers|shoe|boot|glove|cape|cloak|armor|armour|hair|hat|helmet|accessor|eyelash|lash|tooth|teeth|belt|sock|outfit|garment|одеж|плать|юбк|волос|сапог|броня|плащ)/i.test(String(value || ''));
+}
+export function isLikelyBodyName(value) {
+  return /(?:^|[_ .-])(?:body|skin|torso|basebody|nude|naked|голое_тело|тело)(?:$|[_ .-])/i.test(String(value || ''));
+}
+/** Conservative default: when the target cannot be unambiguously identified,
+ * ask the user to choose it instead of silently touching every skin.
+ */
+export function suggestBodySkinIndex(items) {
+  if (!items.length) return -1;
+  const available=items.map((x,i)=>({i,name:String(x.name||''),size:Number(x.vertices)||0}))
+    .filter(x=>!isLikelyGarmentName(x.name));
+  const named=available.filter(x=>isLikelyBodyName(x.name));
+  if(named.length===1)return named[0].i;
+  if(named.length>1)return -1;
+  if(available.length===1)return available[0].i;
+  return -1;
+}
+/** Torso gate for breast vertices. A physically nearby shoulder, hair or
+ * detached garment is NOT a valid reason to receive breast weights.
+ * Accept aliases used by Mixamo and common human rigs.
+ */
+export function existingTorsoWeight(influences,boneNames) {
+  let sum=0;
+  for(const x of influences){
+    if(!Number.isFinite(x.weight)||x.weight<=0)continue;
+    const n=String(boneNames[x.bone]||'').replace(/^mixamorig:?/i,'');
+    if(/(?:spine|chest|torso|rib|upperbody)/i.test(n))sum+=x.weight;
+  }
+  return clamp(sum,0,1);
+}
+export function shouldApplyBreastWeight({side,pointLocalX,boneLocalX,torsoWeight,threshold=.45}) {
+  if(torsoWeight<threshold)return false;
+  // Only the correct half of the torso; keep a small midline blending band.
+  if(side==='L' && pointLocalX>Math.min(0,boneLocalX*.2)+.015)return false;
+  if(side==='R' && pointLocalX<Math.max(0,boneLocalX*.2)-.015)return false;
+  return true;
+}
