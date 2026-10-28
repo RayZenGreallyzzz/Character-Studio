@@ -123,7 +123,9 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
         resultWeights[v*4+k]=read(sw,k);
       }
     }
-    const point=new THREE.Vector3();
+    const point=new THREE.Vector3(),parentPoint=new THREE.Vector3();
+    const boneNames=mesh.skeleton.bones.map(item=>item.name);
+    const parentInverse=bone.parent?.matrixWorld.clone().invert();
     let localCount=0;
     for(let v=0;v<pos.count;v++) {
       // Using vertex bind coordinates, not a deformed animated frame.
@@ -134,8 +136,8 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
       const base=[];
       for(let k=0;k<4;k++) base.push({bone:resultIds[v*4+k],weight:resultWeights[v*4+k]});
       if(slot==='breast'){
-        const torso=existingTorsoWeight(base,mesh.skeleton.bones.map(item=>item.name));
-        const parentPoint=point.clone().applyMatrix4(bone.parent.matrixWorld.clone().invert());
+        const torso=existingTorsoWeight(base,boneNames);
+        if(parentInverse)parentPoint.copy(point).applyMatrix4(parentInverse);
         if(!shouldApplyBreastWeight({
           side,pointLocalX:parentPoint.x,boneLocalX:bone.position.x,torsoWeight:torso
         }))continue;
