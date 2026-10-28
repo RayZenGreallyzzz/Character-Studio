@@ -27,7 +27,7 @@ function rig({rotation=0,mesh=true}={}){
       ...Array.from({length:6},()=>[.9,.1,0,0]).flat()
     ],4));
     const skin=new THREE.SkinnedMesh(geo,new THREE.MeshBasicMaterial());
-    skin.userData.pcsMainSkin=true;root.add(skin);
+    skin.userData.pcsMainSkin=true;skin.userData.pcsBodySurface='all';root.add(skin);
     root.updateMatrixWorld(true);
     skin.bind(new THREE.Skeleton([hips,chest,head,L,R]),skin.matrixWorld.clone());
   }
