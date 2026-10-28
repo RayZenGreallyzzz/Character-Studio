@@ -24,7 +24,7 @@ test('garments are never auto-selected as anatomical body',()=>{
  assert.equal(suggestBodySkinIndex([{name:'SkinnedMesh_Dress',vertices:10000},{name:'Body',vertices:18000}]),1);
  assert.equal(suggestBodySkinIndex([{name:'Hair',vertices:2000},{name:'Dress',vertices:8000}]),-1);
  assert.equal(suggestBodySkinIndex([{name:'Part_1',vertices:10000},{name:'Part_2',vertices:9000}]),-1);
- assert.equal(suggestBodySkinIndex([{name:'Unlabeled',vertices:20000}]),0);
+ assert.equal(suggestBodySkinIndex([{name:'Unlabeled',vertices:20000}]),-1);
  assert.equal(isLikelyGarmentName('Female_Dress'),true);
 });
 test('breast influence is limited to torso weights and signed body region',()=>{
