@@ -79,7 +79,7 @@ export function suggestBodySkinIndex(items) {
   const named=available.filter(x=>isLikelyBodyName(x.name));
   if(named.length===1)return named[0].i;
   if(named.length>1)return -1;
-  if(available.length===1)return available[0].i;
+  // A single unlabeled mesh can still combine clothes + body; never guess.
   return -1;
 }
 /** Torso gate for breast vertices. A physically nearby shoulder, hair or
