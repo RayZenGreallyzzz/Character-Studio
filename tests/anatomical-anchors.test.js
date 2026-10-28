@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {anatomicalFrame,anatomicalTargets} from '../src/rig-anatomy.js';
 import {addBoneChain,weightExistingSkin} from '../src/rig.js';
+import {connectedSurfaceIslands} from '../src/mesh-islands.js';
 
 function rig({rotation=0,mesh=true}={}){
   const root=new THREE.Group();
@@ -89,4 +90,22 @@ test('breast skinning updates weights only on corresponding FRONT side and not b
     let s=0;for(let j=0;j<4;j++)s+=weights.getComponent(i,j);
     assert.ok(Math.abs(s-1)<1e-5);
   }
+});
+
+test('repainting breast on one disconnected island cannot repaint the other island of same skinned mesh',()=>{
+ const {root,chest}=rig();
+ const mesh=root.children.find(x=>x.isSkinnedMesh);
+ const analysis=connectedSurfaceIslands(mesh.geometry);
+ assert.equal(analysis.components.length,2);
+ mesh.userData.pcsBodySurface='0';
+ const before=Array.from(mesh.geometry.getAttribute('skinWeight').array);
+ const left=addBoneChain(root,chest,'breast',1,'L')[0];
+ const result=weightExistingSkin(root,left,{radius:.30,strength:.65});
+ assert.ok(result.vertices>0);
+ const after=mesh.geometry.getAttribute('skinWeight').array;
+ for(let v=0;v<analysis.componentByVertex.length;v++){
+  if(analysis.componentByVertex[v]===0)continue;
+  for(let j=0;j<4;j++)
+   assert.equal(after[v*4+j],before[v*4+j],'non-selected surface must retain original weights');
+ }
 });
