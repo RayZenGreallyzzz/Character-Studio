@@ -29,7 +29,7 @@ app.innerHTML=`
 </main></div><div class="status" id="status">Готово. Загрузите GLB или попробуйте демо-манекен.</div>
 `;
 
-const state={root:null,scene:null,baseBytes:null,baseName:'',baseAnimations:[],extras:[],accessories:[],selected:null,activeClip:'PCS_Idle',customClips:{PCS_Idle:3},animationData:{},mixer:null,playing:false,clock:new THREE.Clock(),time:0,skeletonVisible:true,helpers:[],demo:true,applying:false};
+const state={root:null,scene:null,baseBytes:null,baseName:'',baseAnimations:[],extras:[],accessories:[],importedDonors:[],selected:null,activeClip:'PCS_Idle',customClips:{PCS_Idle:3},animationData:{},mixer:null,playing:false,clock:new THREE.Clock(),time:0,skeletonVisible:true,helpers:[],demo:true,applying:false};
 const scene=new THREE.Scene();scene.background=new THREE.Color('#171c27');scene.fog=new THREE.Fog('#171c27',18,45);state.scene=scene;
 const camera=new THREE.PerspectiveCamera(37,1,.01,150);camera.position.set(3.3,2.2,5.3);
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power',preserveDrawingBuffer:false});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;$('stage').appendChild(renderer.domElement);
@@ -47,7 +47,7 @@ function currentBones(){return getBones(state.root);}
 function currentClip(){return state.baseAnimations.find(c=>c.name===state.activeClip) || null;}
 function currentDuration(){return currentClip()?.duration||state.customClips[state.activeClip]||3;}
 function getClipNames(){return [...new Set([...state.baseAnimations.map(c=>c.name),...Object.keys(state.customClips)])];}
-function resetCharacter(){if($('body-skin'))$('body-skin').replaceChildren(option('','Не выбран — автовеса выключены'));if(state.root){scene.remove(state.root);state.root.traverse(o=>{if(!o.isMesh)return;if(o.geometry)o.geometry.dispose();for(const m of (Array.isArray(o.material)?o.material:[o.material])){if(!m)continue;for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose?.();}});}for(const h of state.helpers){scene.remove(h);h.dispose?.();}state.helpers=[];state.root=null;state.extras=[];state.accessories=[];state.animationData={};state.customClips={PCS_Idle:3};state.activeClip='PCS_Idle';state.mixer?.stopAllAction();state.mixer=null;state.baseAnimations=[];state.selected=null;state.playing=false;state.time=0;state.baseBytes=null;state.weightOperations=[];state.demo=false;}
+function resetCharacter(){if($('body-skin'))$('body-skin').replaceChildren(option('','Не выбран — автовеса выключены'));if(state.root){scene.remove(state.root);state.root.traverse(o=>{if(!o.isMesh)return;if(o.geometry)o.geometry.dispose();for(const m of (Array.isArray(o.material)?o.material:[o.material])){if(!m)continue;for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose?.();}});}for(const h of state.helpers){scene.remove(h);h.dispose?.();}state.helpers=[];state.root=null;state.extras=[];state.accessories=[];state.importedDonors=[];state.animationData={};state.customClips={PCS_Idle:3};state.activeClip='PCS_Idle';state.mixer?.stopAllAction();state.mixer=null;state.baseAnimations=[];state.selected=null;state.playing=false;state.time=0;state.baseBytes=null;state.weightOperations=[];state.demo=false;}
 function makeDemo(){resetCharacter();const root=new THREE.Group();root.name='Demo_Rig';const hips=new THREE.Bone();hips.name='Hips';hips.position.y=.97;root.add(hips);const chest=new THREE.Bone();chest.name='UpperChest';chest.position.y=.44;hips.add(chest);const head=new THREE.Bone();head.name='Head';head.position.y=.37;chest.add(head);const mat=new THREE.MeshStandardMaterial({color:0x9aafc9,roughness:.7});const dummy=(name,radius,length,px,py,pz,parent)=>{const o=new THREE.Mesh(new THREE.CapsuleGeometry(radius,length,4,8),mat);o.name=name;o.position.set(px,py,pz);o.userData.pcsDemo=true;parent.add(o);};dummy('Корпус (демо)',.22,.52,0,.17,0,chest);dummy('Голова (демо)',.16,.12,0,.13,0,head);dummy('Таз (демо)',.19,.12,0,-.06,0,hips);dummy('Нога Л (демо)',.095,.66,-.11,-.53,0,hips);dummy('Нога П (демо)',.095,.66,.11,-.53,0,hips);
  for(const sign of [-1,1])dummy('Рука (демо)',.077,.48,sign*.3,-.04,0,chest);
  scene.add(root);state.root=root;state.demo=true;state.baseName='Демо-скелет (неэкспортируемый персонаж)';state.selected=head;refreshAll();focus();say('Демонстрационный скелет: попробуй добавить кости. Для реального персонажа загрузи GLB.');}
@@ -125,7 +125,7 @@ async function exportGLB(){if(!state.root||state.demo)throw Error('Для экс
 }
 function bytesToBase64(arr){let s='';for(let i=0;i<arr.length;i+=32768)s+=String.fromCharCode(...arr.subarray(i,i+32768));return btoa(s);}
 function base64ToBytes(data){const str=atob(data);const a=new Uint8Array(str.length);for(let i=0;i<str.length;i++)a[i]=str.charCodeAt(i);return a;}
-async function saveProject(){if(!state.baseBytes)throw Error('Сначала загрузи GLB-персонажа');const project={format:'PhoenixCharacterStudio',version:1,base:{name:state.baseName,data:bytesToBase64(state.baseBytes)},accessories:state.accessories.map(a=>({id:a.id,name:a.name,data:bytesToBase64(a.bytes),slot:a.slot,parent:a.parent,rigged:a.rigged,chain:a.chain||[],transform:{position:a.group.position.toArray(),quaternion:a.group.quaternion.toArray(),scale:a.group.scale.toArray()}})),bones:state.extras.map(b=>({name:b.name,parent:b.parent.name,position:b.position.toArray(),baseEuler:b.userData.pcs?.baseEuler||[0,0,0],pcs:b.userData.pcs})),weights:state.weightOperations||[],bodySkinIndex:getSkins(state.root).findIndex(m=>m.userData.pcsMainSkin),animationData:state.animationData,customClips:state.customClips};const encoded=new TextEncoder().encode(JSON.stringify(project));await saveBytes(encoded,`${safeName(state.baseName)}.pcs`,'application/json');say('Файл проекта .pcs сохранён');}
+async function saveProject(){if(!state.baseBytes)throw Error('Сначала загрузи GLB-персонажа');const project={format:'PhoenixCharacterStudio',version:1,base:{name:state.baseName,data:bytesToBase64(state.baseBytes)},accessories:state.accessories.map(a=>({id:a.id,name:a.name,data:bytesToBase64(a.bytes),slot:a.slot,parent:a.parent,rigged:a.rigged,chain:a.chain||[],transform:{position:a.group.position.toArray(),quaternion:a.group.quaternion.toArray(),scale:a.group.scale.toArray()}})),bones:state.extras.map(b=>({name:b.name,parent:b.parent.name,position:b.position.toArray(),baseEuler:b.userData.pcs?.baseEuler||[0,0,0],pcs:b.userData.pcs})),weights:state.weightOperations||[],importedDonors:state.importedDonors.map(d=>({name:d.name,data:bytesToBase64(d.data)})),bodySkinIndex:getSkins(state.root).findIndex(m=>m.userData.pcsMainSkin),animationData:state.animationData,customClips:state.customClips};const encoded=new TextEncoder().encode(JSON.stringify(project));await saveBytes(encoded,`${safeName(state.baseName)}.pcs`,'application/json');say('Файл проекта .pcs сохранён');}
 async function loadProject(obj){if(obj.format!=='PhoenixCharacterStudio'||obj.version!==1)throw Error('Неверный формат проекта');await loadBase(base64ToBytes(obj.base.data),obj.base.name);for(const item of obj.bones||[]){const parent=currentBones().find(b=>b.name===item.parent);if(!parent)continue;const b=new THREE.Bone();b.name=item.name;b.position.fromArray(item.position);b.userData.pcs=item.pcs;parent.add(b);state.extras.push(b);}state.root.updateMatrixWorld(true);
  for(const a of obj.accessories||[]){const acc=await loadAccessory(base64ToBytes(a.data),a.name,a);if(a.rigged){const chain=(a.chain||[]).map(n=>currentBones().find(b=>b.name===n)).filter(Boolean);if(chain.length)skinAccessoryToChain(state.root,acc.group,chain);acc.rigged=true;acc.chain=a.chain;}}
  if(Number.isInteger(obj.bodySkinIndex)&&obj.bodySkinIndex>=0){
@@ -133,13 +133,14 @@ async function loadProject(obj){if(obj.format!=='PhoenixCharacterStudio'||obj.ve
   if(candidate){$('body-skin').value=candidate.uuid;applyBodySkinSelection();}
  }
  state.weightOperations=[];for(const op of obj.weights||[]){const bone=currentBones().find(b=>b.name===op.bone);if(bone){weightExistingSkin(state.root,bone,op);state.weightOperations.push(op);}}
+ for(const donor of obj.importedDonors||[])await importDonorAnimation(base64ToBytes(donor.data),donor.name);
  state.customClips=obj.customClips||{PCS_Idle:3};state.animationData=obj.animationData||{};state.selected=state.extras[0]||getDefaultParent(state.root,'head');refreshAll();say('Проект восстановлен: кости, детали, веса и ключи');}
 
 $('body-skin').addEventListener('change',applyBodySkinSelection);
 $('base-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await loadBase(new Uint8Array(await f.arrayBuffer()),f.name);}catch(e){err(e);}e.target.value='';});
-$('animation-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{
+async function importDonorAnimation(bytes,name,{remember=true}={}){
  if(!state.root||state.demo)throw Error('Сначала загрузи GLB-персонажа со скелетом');
- const gltf=await parseGLB(new Uint8Array(await f.arrayBuffer()));
+ const gltf=await parseGLB(bytes);
  if(!gltf.animations?.length)throw Error('В этом GLB нет анимационных клипов');
  const check=inspectSkeletonCompatibility(gltf.scene,state.root);
  if(!check.ok)throw Error('Перенос заблокирован: несовместимые скелеты. '+check.problems.slice(0,4).join('; ')+'. Нужен полноценный ретаргетинг с учётом исходной позы.');
@@ -147,17 +148,20 @@ $('animation-file').addEventListener('change',async e=>{const f=e.target.files[0
  for(const clip of gltf.animations){
   const mapped=remapAnimationTracks(clip,gltf.scene,state.root);
   if(!mapped.tracks.length)continue;
-  let name=clip.name||'Imported';
-  if(state.baseAnimations.some(c=>c.name===name))name=name+'_Imported';
-  while(state.baseAnimations.some(c=>c.name===name))name+='_2';
-  const newClip=new THREE.AnimationClip(name,clip.duration,mapped.tracks);
-  state.baseAnimations.push(newClip);
+  let clipName=clip.name||'Imported';
+  if(state.baseAnimations.some(c=>c.name===clipName))clipName+='_Imported';
+  while(state.baseAnimations.some(c=>c.name===clipName))clipName+='_2';
+  state.baseAnimations.push(new THREE.AnimationClip(clipName,clip.duration,mapped.tracks));
   imported++;
  }
  if(!imported)throw Error('Анимации не содержат дорожек костей целевого персонажа');
+ if(remember)state.importedDonors.push({name,data:bytes.slice()});
  state.activeClip=state.baseAnimations.at(-1).name;
  refreshAll();
- say(`Импортировано ${imported} клипов; имена, иерархия и исходные повороты костей проверены.`);
+ say(`Импортировано ${imported} клипов; исходные повороты и иерархия костей совпали.`);
+}
+$('animation-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{
+ await importDonorAnimation(new Uint8Array(await f.arrayBuffer()),f.name);
  }catch(e){err(e)}e.target.value='';});
 $('detail-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await loadAccessory(new Uint8Array(await f.arrayBuffer()),f.name,{slot:$('slot').value,parent:currentBones().find(b=>b.uuid===$('parent-bone').value)?.name});}catch(e){err(e);}e.target.value='';});
 $('project-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await loadProject(JSON.parse(await f.text()));}catch(e){err(e);}e.target.value='';});
