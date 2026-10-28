@@ -11,7 +11,6 @@ export function connectedSurfaceIslands(geometry,{maxVertices=220000}={}){
  if(n<3)return {reason:'В меше недостаточно вершин',components:[],componentByVertex:null};
  if(n>maxVertices)return {reason:'Слишком большой меш для анализа островов на планшете: '+n+' вершин.',components:[],componentByVertex:null};
  const box=geometry.boundingBox||geometry.computeBoundingBox()||geometry.boundingBox;
- const span=box?.getSize?.({x:0,y:0,z:0,set(){}}); // use direct min/max below, no Three dependency
  const dim=Math.max(
   (box?.max.x??1)-(box?.min.x??0),
   (box?.max.y??1)-(box?.min.y??0),
