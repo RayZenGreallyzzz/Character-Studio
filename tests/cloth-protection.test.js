@@ -60,7 +60,7 @@ test('brush crosses UV seam where vertices share coordinates and compatible norm
  const graph=surfaceAdjacency(g);
  assert.ok(graph[1].includes(3),'same-position UV seam must be connected');
  const mask=new Uint8Array(6);
- const affected=paintProtection(g,mask,{a:0,b:1,c:2},{x:.5,y:.3,z:0},1,true);
+ const affected=paintProtection(g,mask,{a:0,b:1,c:2},{x:.5,y:.3,z:0},1.8,true);
  assert.equal(affected,6,'paint can cross UV seam inside selected surface');
  g.dispose();
 });
