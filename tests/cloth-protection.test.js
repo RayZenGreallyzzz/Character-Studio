@@ -49,3 +49,18 @@ test('brush can be restricted to selected anatomical island',()=>{
  assert.equal(countProtected(m),0,'wrong island must remain unpainted');
  g.dispose();
 });
+
+test('brush crosses UV seam where vertices share coordinates and compatible normals',()=>{
+ const g=new THREE.BufferGeometry();
+ g.setAttribute('position',new THREE.Float32BufferAttribute([
+  0,0,0,1,0,0,0,1,0,
+  1,0,0,1,1,0,0,1,0
+ ],3));
+ g.setAttribute('normal',new THREE.Float32BufferAttribute(Array.from({length:6},()=>[0,0,1]).flat(),3));
+ const graph=surfaceAdjacency(g);
+ assert.ok(graph[1].includes(3),'same-position UV seam must be connected');
+ const mask=new Uint8Array(6);
+ const affected=paintProtection(g,mask,{a:0,b:1,c:2},{x:.5,y:.3,z:0},1,true);
+ assert.equal(affected,6,'paint can cross UV seam inside selected surface');
+ g.dispose();
+});
