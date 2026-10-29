@@ -11,7 +11,7 @@ import {secondaryAngles,suggestBodySkinIndex,isLikelyGarmentName} from './rig-ut
 import {inspectSkeletonCompatibility,remapAnimationTracks} from './retarget-compat.js';
 import {connectedSurfaceIslands} from './mesh-islands.js';
 import {createClothBrush} from './cloth-brush.js';
-import {clothProtection} from './cloth-protection.js';
+import {clothProtection,countProtected} from './cloth-protection.js';
 import './style.css';
 
 const $=id=>document.getElementById(id);
@@ -31,7 +31,7 @@ app.innerHTML=`
 <label>Режим<select id="cloth-mode"><option value="protect">Защитить ткань</option><option value="erase">Стереть защиту</option></select></label>
 <button class="btn wide" id="cloth-paint-toggle">Включить кисть на 3D-модели</button>
 <div class="line"><button id="cloth-show">Показать маску</button><button id="cloth-clear">Очистить защиту</button></div>
-<p class="hint" id="cloth-paint-info">Отметь пальцем одежду прямо на 3D-модели. Бирюзовые точки — защищённые вершины. Движение по поверхности не захватывает соседние слои насквозь.</p><label>Радиус влияния, м<input id="radius" type="number" min="0.01" step="0.01" value="0.18"></label><label>Сила влияния (0–0.95)<input id="strength" type="number" min="0" max="0.95" step="0.05" value="0.55"></label><button class="btn wide" id="auto-weights">Назначить веса выбранной кости</button></section>
+<p class="hint" id="cloth-paint-info">Отметь пальцем одежду прямо на 3D-модели. Бирюзовые точки — защищённые вершины. Движение по поверхности не захватывает соседние слои насквозь.</p><button id="legacy-approve" class="btn wide" hidden>Я перерисовал защиту v2 — разрешить новый проект</button><label>Радиус влияния, м<input id="radius" type="number" min="0.01" step="0.01" value="0.18"></label><label>Сила влияния (0–0.95)<input id="strength" type="number" min="0" max="0.95" step="0.05" value="0.55"></label><button class="btn wide" id="auto-weights">Назначить веса выбранной кости</button></section>
 <section><div class="heading">04 / Вторичное движение</div><label class="check"><input id="motion-enabled" type="checkbox"> Автоматическое покачивание</label><label>Амплитуда, °<input id="amplitude" type="range" min="0" max="35" step="1" value="5"><span id="amplitude-out">5°</span></label><label>Частота, Гц<input id="frequency" type="range" min="0.2" max="4" step="0.1" value="1.3"><span id="frequency-out">1.3</span></label><p class="hint">Движение запекается в ключи выбранных анимаций.</p></section>
 </div></aside><main class="workspace"><div class="viewport-head"><div><strong id="character-name">Демонстрационный манекен</strong><span id="mesh-info">Загрузите GLB для редактирования</span></div><div class="tools"><button id="focus">Центрировать</button><button id="skeleton-toggle">Кости: вкл</button><button id="rest">Исходная поза</button></div></div><div id="stage"></div><div class="floor-note">Один палец — вращение · два — масштаб / движение камеры</div>
 <div class="timeline"><div class="timeline-top"><div class="heading">05 / Анимация</div><div class="play-controls"><button id="play">▶</button><select id="clip-select"></select><button id="new-clip">+ Клип</button></div></div><input type="range" id="time" min="0" max="3" step="0.01" value="0"><div class="line timeline-bottom"><span id="time-label">0.00 / 3.00 сек</span><div class="line"><button id="keyframe">◆ Записать ключ кости</button><button id="clear-keys">Удалить ключи кости</button></div></div><p class="hint">Ключ сохраняет углы из полей «Поворот» для выбранной добавленной кости; существующие клипы не перезаписываются до экспорта.</p></div>
@@ -57,7 +57,7 @@ function currentBones(){return getBones(state.root);}
 function currentClip(){return state.baseAnimations.find(c=>c.name===state.activeClip) || null;}
 function currentDuration(){return currentClip()?.duration||state.customClips[state.activeClip]||3;}
 function getClipNames(){return [...new Set([...state.baseAnimations.map(c=>c.name),...Object.keys(state.customClips)])];}
-function resetCharacter(){state.legacyMaskWarning=false;clothBrush?.disable();clothBrush?.removeOverlay();clearBodyPreview();state.bodySurfaceAnalysis=null;state.bodySurfaceMeshUuid=null;if($('body-skin'))$('body-skin').replaceChildren(option('','Не выбран — автовеса выключены'));if(state.root){scene.remove(state.root);state.root.traverse(o=>{if(!o.isMesh)return;if(o.geometry)o.geometry.dispose();for(const m of (Array.isArray(o.material)?o.material:[o.material])){if(!m)continue;for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose?.();}});}for(const h of state.helpers){scene.remove(h);h.dispose?.();}state.helpers=[];state.root=null;state.extras=[];state.accessories=[];state.importedDonors=[];state.animationData={};state.customClips={PCS_Idle:3};state.activeClip='PCS_Idle';state.mixer?.stopAllAction();state.mixer=null;state.baseAnimations=[];state.selected=null;state.playing=false;state.time=0;state.baseBytes=null;state.weightOperations=[];state.demo=false;}
+function resetCharacter(){state.legacyMaskWarning=false;if($('legacy-approve'))$('legacy-approve').hidden=true;clothBrush?.disable();clothBrush?.removeOverlay();clearBodyPreview();state.bodySurfaceAnalysis=null;state.bodySurfaceMeshUuid=null;if($('body-skin'))$('body-skin').replaceChildren(option('','Не выбран — автовеса выключены'));if(state.root){scene.remove(state.root);state.root.traverse(o=>{if(!o.isMesh)return;if(o.geometry)o.geometry.dispose();for(const m of (Array.isArray(o.material)?o.material:[o.material])){if(!m)continue;for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose?.();}});}for(const h of state.helpers){scene.remove(h);h.dispose?.();}state.helpers=[];state.root=null;state.extras=[];state.accessories=[];state.importedDonors=[];state.animationData={};state.customClips={PCS_Idle:3};state.activeClip='PCS_Idle';state.mixer?.stopAllAction();state.mixer=null;state.baseAnimations=[];state.selected=null;state.playing=false;state.time=0;state.baseBytes=null;state.weightOperations=[];state.demo=false;}
 function makeDemo(){resetCharacter();const root=new THREE.Group();root.name='Demo_Rig';const hips=new THREE.Bone();hips.name='Hips';hips.position.y=.97;root.add(hips);const chest=new THREE.Bone();chest.name='UpperChest';chest.position.y=.44;hips.add(chest);const head=new THREE.Bone();head.name='Head';head.position.y=.37;chest.add(head);const mat=new THREE.MeshStandardMaterial({color:0x9aafc9,roughness:.7});const dummy=(name,radius,length,px,py,pz,parent)=>{const o=new THREE.Mesh(new THREE.CapsuleGeometry(radius,length,4,8),mat);o.name=name;o.position.set(px,py,pz);o.userData.pcsDemo=true;parent.add(o);};dummy('Корпус (демо)',.22,.52,0,.17,0,chest);dummy('Голова (демо)',.16,.12,0,.13,0,head);dummy('Таз (демо)',.19,.12,0,-.06,0,hips);dummy('Нога Л (демо)',.095,.66,-.11,-.53,0,hips);dummy('Нога П (демо)',.095,.66,.11,-.53,0,hips);
  for(const sign of [-1,1])dummy('Рука (демо)',.077,.48,sign*.3,-.04,0,chest);
  scene.add(root);state.root=root;state.demo=true;state.baseName='Демо-скелет (неэкспортируемый персонаж)';state.selected=head;refreshAll();focus();say('Демонстрационный скелет: попробуй добавить кости. Для реального персонажа загрузи GLB.');}
@@ -237,6 +237,7 @@ async function loadProject(obj){if(obj.format!=='PhoenixCharacterStudio'||obj.ve
  }
  clothBrush?.show();
  state.legacyMaskWarning=legacyCount>0;
+ $('legacy-approve').hidden=!state.legacyMaskWarning;
  state.weightOperations=[];
  if(!state.legacyMaskWarning)for(const op of obj.weights||[]){
    const bone=currentBones().find(b=>b.name===op.bone);
@@ -245,6 +246,22 @@ async function loadProject(obj){if(obj.format!=='PhoenixCharacterStudio'||obj.ve
  for(const donor of obj.importedDonors||[])await importDonorAnimation(base64ToBytes(donor.data),donor.name);
  state.customClips=obj.customClips||{PCS_Idle:3};state.animationData=obj.animationData||{};state.selected=state.extras[0]||getDefaultParent(state.root,'head');refreshAll();if(state.legacyMaskWarning){say('Проект открыт с предупреждением: найдена старая маска v1. Автовеса остановлены, чтобы не потянуть одежду. Старый .pcs не перезаписывай.');window.alert('Найдена старая небезопасная маска одежды v1. Кости и детали загружены, но повторное назначение весов заблокировано. Сохрани исходный проект .pcs, заново закрась одежду и экспортируй новый GLB.');}else say('Проект восстановлен: кости, детали, веса и ключи');}
 
+$('legacy-approve').onclick=()=>{
+ try{
+  if(!state.legacyMaskWarning)return;
+  const old=getSkins(state.root).filter(m=>m.userData.pcsLegacyClothMask);
+  if(!old.length)throw Error('Не найдено старых масок');
+  for(const mesh of old){
+   const mask=clothProtection(mesh); // must be a *new* valid v2 signature
+   if(!mask||countProtected(mask)===0)
+    throw Error('Нужно заново закрасить ткань на каждом меше со старой маской v1.');
+  }
+  if(!window.confirm('Ты проверил бирюзовую защиту одежды на ВСЕХ участках? Старые изменения весов v1 не будут автоматически возвращены. Продолжить?'))return;
+  for(const mesh of old)delete mesh.userData.pcsLegacyClothMask;
+  state.legacyMaskWarning=false;$('legacy-approve').hidden=true;
+  say('Новые маски v2 приняты. Можешь назначить веса вручную и сохранить НОВЫЙ файл проекта. Старый .pcs оставь как резервную копию.');
+ }catch(e){err(e)}
+};
 $('body-skin').addEventListener('change',applyBodySkinSelection);
 $('body-surface').addEventListener('change',applyBodySurfaceSelection);
 $('body-preview').onclick=showBodySurfacePreview;
