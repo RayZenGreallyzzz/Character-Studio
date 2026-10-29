@@ -64,3 +64,24 @@ test('brush crosses UV seam where vertices share coordinates and compatible norm
  assert.equal(affected,6,'paint can cross UV seam inside selected surface');
  g.dispose();
 });
+
+test('full signature detects changes to middle vertices skipped by old 96-vertex sampling',()=>{
+ const count=1001,g=new THREE.BufferGeometry(),coords=new Float32Array(count*3);
+ for(let i=0;i<count;i++){coords[3*i]=i/1000;coords[3*i+1]=i%4;coords[3*i+2]=0;}
+ g.setAttribute('position',new THREE.Float32BufferAttribute(coords,3));
+ const mask=new Uint8Array(count);mask[150]=1;
+ const mesh=new THREE.SkinnedMesh(g,new THREE.MeshBasicMaterial());
+ const saved=storeClothProtection(mesh,mask);
+ assert.equal(saved.type,'phoenix-cloth-guard-v2');
+ assert.equal(clothProtection(mesh)[150],1);
+ // Old sampled algorithm observes only multiples of floor(1001/96)=10 and 1000.
+ g.getAttribute('position').setZ(151,0.91);
+ assert.throws(()=>clothProtection(mesh),/не совпадает/,'same BufferGeometry mutated in place');
+ mesh.material.dispose();g.dispose();
+});
+test('legacy sampled v1 masks fail closed, never silently applied to modified mesh',()=>{
+ const g=twoLayers(),m=new THREE.SkinnedMesh(g,new THREE.MeshBasicMaterial());
+ m.userData.pcsClothMask={type:'phoenix-cloth-guard-v1',vertices:6,signature:'00000000',runs:[[0,3]]};
+ assert.throws(()=>clothProtection(m),/не совпадает/);
+ g.dispose();m.material.dispose();
+});
