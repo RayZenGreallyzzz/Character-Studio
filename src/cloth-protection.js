@@ -80,7 +80,29 @@ export function surfaceAdjacency(geo){
    if(Math.max(a,b,c)>=count)throw Error('Повреждены индексы треугольников');
    add(a,b);add(b,c);add(c,a);
  }
- // Deduplicate without merging geometrically nearby skin and fabric.
+ // Reconnect UV-seam duplicates and non-indexed triangle corners only at
+ // practically identical positions with compatible normals. Never connect
+ // physically nearby but separated layers (fabric over skin).
+ geo.computeBoundingBox();
+ const bounds=geo.boundingBox;
+ const span=Math.max(bounds.max.x-bounds.min.x,bounds.max.y-bounds.min.y,bounds.max.z-bounds.min.z,1e-6);
+ const eps=Math.max(1e-8,span*1e-7),norm=geo.getAttribute('normal'),seams=new Map();
+ for(let v=0;v<count;v++){
+  const x=p.getX(v),y=p.getY(v),z=p.getZ(v);
+  if(![x,y,z].every(Number.isFinite))throw Error('Неверные координаты меша');
+  const key=Math.round(x/eps)+','+Math.round(y/eps)+','+Math.round(z/eps);
+  const matches=seams.get(key);
+  if(!matches){seams.set(key,[v]);continue}
+  // Limit cross-connections in accidental stacks of coincident surfaces.
+  for(const other of matches.slice(0,8)){
+   if(norm){
+    const dot=norm.getX(other)*norm.getX(v)+norm.getY(other)*norm.getY(v)+norm.getZ(other)*norm.getZ(v);
+    if(dot<0.2)continue;
+   }
+   add(other,v);
+  }
+  if(matches.length<8)matches.push(v);
+ }
  for(let i=0;i<count;i++)if(adj[i].length>1)adj[i]=[...new Set(adj[i])];
  graphCache.set(geo,adj);
  return adj;
