@@ -21,7 +21,7 @@ app.innerHTML=`
 <label class="btn primary">Загрузить персонажа GLB<input id="base-file" type="file" accept=".glb" hidden></label>
 <label class="btn">Добавить деталь GLB<input id="detail-file" type="file" accept=".glb" hidden></label>
 <label class="btn">Открыть проект<input id="project-file" type="file" accept=".pcs,.json" hidden></label>
-<label class="btn">Анимация GLB<input id="animation-file" type="file" accept=".glb" hidden></label><button id="save-project">Проект</button><button class="btn primary" id="export">Экспорт GLB</button></div></header>
+<label class="btn">Анимация GLB<input id="animation-file" type="file" accept=".glb" hidden></label><button id="save-project">Проект</button><button class="btn primary" id="export">Экспорт GLB</button><button id="character-next" class="btn primary">Сохранить → Retarget</button></div></header>
 <div class="main-layout"><aside class="sidebar"><div class="scroll">
 <section><div class="heading">01 / Скелет</div><label>Родительская кость<select id="parent-bone"></select></label><label>Новая часть<select id="slot"><option value="hair">Волосы</option><option value="tail">Хвост</option><option value="breast">Грудь</option><option value="face">Лицо</option><option value="ear">Уши</option><option value="wing">Крылья</option><option value="cloth">Одежда / юбка</option></select></label><div class="line"><label>Количество костей<input id="count" type="number" min="1" max="15" value="3"/></label><label>Сторона<select id="side"><option value="">Центр</option><option value="L">Лево</option><option value="R">Право</option></select></label></div><label class="check"><input id="auto-parent" type="checkbox" checked> Автоматически выбрать правильную родительскую кость</label><button class="btn wide" id="add-chain">+ Создать цепочку</button><button class="btn wide" id="breasts">+ Пара костей груди L/R</button><p class="hint">Грудь, уши и крылья при выборе «Центр» создаются симметричной парой. Кости без весов не деформируют тело: для дополнительных деталей нужно назначить веса или привязать меш к цепочке.</p></section>
 <section><div class="heading">02 / Детали и кости</div><label>Выбранный элемент<select id="selection"></select></label><label>Цепочка для деформации<select id="rig-chain"></select></label><button class="btn wide" id="rig-detail">Привязать деталь к цепочке</button><button class="btn wide" id="attach">Прикрепить деталь к кости</button><div class="subhead">Позиция / поворот / масштаб</div><div id="transform-controls"></div></section>
@@ -206,12 +206,33 @@ async function saveBytes(bytes,filename,mime){if(Capacitor.isNativePlatform()){
  const blob=new Blob([bytes],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 function safeName(name){return (name||'Character').replace(/\.(glb|gltf)$/i,'').replace(/[^\w\u0400-\u04ff-]/g,'_').slice(0,45);}
-async function exportGLB(){if(!state.root||state.demo)throw Error('Для экспорта нужен реальный GLB-персонаж');pause();setTime(0);refreshSkeletonHelper();
- // Export only character root; do not export grid/visual helpers.
+async function buildCharacterGLB(){
+ if(!state.root||state.demo)throw Error('Для экспорта нужен реальный GLB-персонаж');
+ if(state.legacyMaskWarning)throw Error('Старая защита одежды v1 не проверена: сначала нарисуй и подтверди маску v2.');
+ pause();setTime(0);refreshSkeletonHelper();
  const clips=exportClips();
- const result=await new Promise((resolve,reject)=>exporter.parse(state.root,resolve,reject,{binary:true,trs:true,animations:clips,onlyVisible:false,maxTextureSize:2048}));
- if(!(result instanceof ArrayBuffer))throw Error('GLB экспорт не сформирован');await saveBytes(new Uint8Array(result),`${safeName(state.baseName)}_Phoenix.glb`,'model/gltf-binary');say(`Экспорт: ${(result.byteLength/1048576).toFixed(2)} МБ · ${clips.length} анимаций`);
+ // Never silently downscale original textures while passing through Character.
+ const result=await new Promise((resolve,reject)=>exporter.parse(state.root,resolve,reject,
+   {binary:true,trs:true,animations:clips,onlyVisible:false}));
+ if(!(result instanceof ArrayBuffer))throw Error('GLB экспорт не сформирован');
+ return {result,clips};
 }
+async function exportGLB(){
+ const {result,clips}=await buildCharacterGLB();
+ await saveBytes(new Uint8Array(result),`${safeName(state.baseName)}_Phoenix.glb`,'model/gltf-binary');
+ say(`Экспорт: ${(result.byteLength/1048576).toFixed(2)} МБ · ${clips.length} анимаций`);
+}
+async function commitCharacterToRetarget(){
+ if(!window.PhoenixSuite?.saveBlob)throw Error('Общие GLB доступны в объединённом Android Forge.');
+ const {result,clips}=await buildCharacterGLB();
+ const saved=await window.PhoenixSuite.saveBlob(new Blob([result],{type:'model/gltf-binary'}),
+   `${safeName(state.baseName)}_Character_to_Retarget.glb`);
+ if(!saved)throw Error('Не получилось сохранить общий GLB');
+ say(`Персонаж сохранён в общий GLB, ${clips.length} клипов. Открываю Retarget.`);
+ window.PhoenixNative?.openTool('retarget');
+}
+window.PhoenixCharacterCommit=commitCharacterToRetarget;
+
 function bytesToBase64(arr){let s='';for(let i=0;i<arr.length;i+=32768)s+=String.fromCharCode(...arr.subarray(i,i+32768));return btoa(s);}
 function base64ToBytes(data){const str=atob(data);const a=new Uint8Array(str.length);for(let i=0;i<str.length;i++)a[i]=str.charCodeAt(i);return a;}
 async function saveProject(){if(state.legacyMaskWarning)throw Error('Старая маска v1 не проверена. Не перезаписывай исходный .pcs! Заново разметь одежду, экспортируй GLB и создай новый проект.');if(!state.baseBytes)throw Error('Сначала загрузи GLB-персонажа');const project={format:'PhoenixCharacterStudio',version:1,base:{name:state.baseName,data:bytesToBase64(state.baseBytes)},accessories:state.accessories.map(a=>({id:a.id,name:a.name,data:bytesToBase64(a.bytes),slot:a.slot,parent:a.parent,rigged:a.rigged,chain:a.chain||[],transform:{position:a.group.position.toArray(),quaternion:a.group.quaternion.toArray(),scale:a.group.scale.toArray()}})),bones:state.extras.map(b=>({name:b.name,parent:b.parent.name,position:b.position.toArray(),baseEuler:b.userData.pcs?.baseEuler||[0,0,0],pcs:b.userData.pcs})),weights:state.weightOperations||[],bodySkinIndex:getSkins(state.root).findIndex(m=>m.userData.pcsMainSkin),bodySurface:$('body-surface').value||null,clothMasks:getSkins(state.root).map(m=>m.userData.pcsClothMask||null),importedDonors:state.importedDonors.map(d=>({name:d.name,data:bytesToBase64(d.data)})),animationData:state.animationData,customClips:state.customClips};const encoded=new TextEncoder().encode(JSON.stringify(project));await saveBytes(encoded,`${safeName(state.baseName)}.pcs`,'application/json');say('Файл проекта .pcs сохранён');}
@@ -295,6 +316,7 @@ $('animation-file').addEventListener('change',async e=>{const f=e.target.files[0
 $('detail-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await loadAccessory(new Uint8Array(await f.arrayBuffer()),f.name,{slot:$('slot').value,parent:currentBones().find(b=>b.uuid===$('parent-bone').value)?.name});}catch(e){err(e);}e.target.value='';});
 $('project-file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await loadProject(JSON.parse(await f.text()));}catch(e){err(e);}e.target.value='';});
 $('save-project').onclick=()=>saveProject().catch(err);$('export').onclick=()=>exportGLB().catch(err);
+$('character-next').onclick=()=>commitCharacterToRetarget().catch(err);
 $('selection').onchange=()=>{const v=$('selection').value;state.selected=v.startsWith('bone:')?currentBones().find(b=>b.uuid===v.slice(5)):state.accessories.find(a=>a.id===v.slice(7))?.group;refreshSelection();};
 $('slot').onchange=()=>{const b=getDefaultParent(state.root,$('slot').value);if(b)$('parent-bone').value=b.uuid;};
 // Breast skin gets an actual influence automatically, not just decorative bones.
