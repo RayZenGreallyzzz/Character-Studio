@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {connectedSurfaceIslands,allowsSurfaceVertex} from './mesh-islands.js';
+import {clothProtection} from './cloth-protection.js';
 import {anatomicalFrame,anatomicalTargets,pointAnatomyMask} from './rig-anatomy.js';
 import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles,existingTorsoWeight,shouldApplyBreastWeight} from './rig-utils.js';
 
@@ -107,6 +108,7 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
     const surfaces=connectedSurfaceIslands(mesh.geometry);
     if(surfaces.reason)continue; // fail closed: unknown surface => no repaint
     if(chosenSurface!=='all'&&!surfaces.components.some(c=>c.id===Number(chosenSurface)))continue;
+    const protectedCloth=clothProtection(mesh); // verify unchanged topology; fail closed if stale
     if(!mesh.userData.pcsOwnGeometry){mesh.geometry=mesh.geometry.clone();mesh.userData.pcsOwnGeometry=true;}
     const geo=mesh.geometry;
     const si=geo.getAttribute('skinIndex'),sw=geo.getAttribute('skinWeight'),pos=geo.getAttribute('position');
@@ -135,6 +137,7 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
     let localCount=0;
     for(let v=0;v<pos.count;v++) {
       if(!allowsSurfaceVertex(surfaces,v,chosenSurface))continue;
+      if(protectedCloth?.[v])continue; // absolutely preserve painted garment weights
       // Using vertex bind coordinates, not a deformed animated frame.
       point.fromBufferAttribute(pos,v).applyMatrix4(mesh.matrixWorld);
       const mask=pointAnatomyMask(point,frame,slot,side);
