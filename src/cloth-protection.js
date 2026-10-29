@@ -3,22 +3,33 @@
  * node extras as run-length ranges. No change to geometry, UVs or bone weights.
  * Brush follows triangle edges, not Euclidean proximity through cloth layers.
  */
-const masks = new WeakMap();
 const graphCache = new WeakMap();
 const MAX_PAINT_VERTICES = 120000;
-function geometrySignature(geo) {
-  const p=geo?.getAttribute?.('position'),idx=geo?.getIndex?.();
-  if(!p)return '';
-  let h=2166136261>>>0;
-  function hash(n){h=Math.imul(h^(n>>>0),16777619)>>>0}
-  hash(p.count);hash(idx?.count||p.count);
-  const step=Math.max(1,Math.floor(p.count/96));
-  for(let i=0;i<p.count;i+=step){
-    hash(Math.round(p.getX(i)*100000));hash(Math.round(p.getY(i)*100000));hash(Math.round(p.getZ(i)*100000));
-  }
-  const last=p.count-1;
-  hash(Math.round(p.getX(last)*100000));hash(Math.round(p.getY(last)*100000));hash(Math.round(p.getZ(last)*100000));
-  return h.toString(16).padStart(8,'0');
+/** Full ordered-vertex and triangle-index digest, shared with Optimize.
+ * No sampled vertices: a reordered or modified middle vertex invalidates mask.
+ * Two independent 32-bit FNV-inspired lanes, computed without allocating per vertex.
+ */
+export function geometrySignature(geo) {
+ const p=geo?.getAttribute?.('position'),idx=geo?.getIndex?.();
+ if(!p||p.count<1)return '';
+ let a=2166136261>>>0,b=0x9e3779b9>>>0;
+ const mix=n=>{
+  const v=n>>>0;
+  a=Math.imul(a^v,16777619)>>>0;
+  b=Math.imul((b+(v^0x85ebca6b))>>>0,0x27d4eb2d)>>>0;
+ };
+ const bytes=new DataView(new ArrayBuffer(8));
+ const addFloat=n=>{
+  if(!Number.isFinite(n))throw Error('Неверные координаты вершин');
+  bytes.setFloat64(0,n,true);
+  mix(bytes.getUint32(0,true));mix(bytes.getUint32(4,true));
+ };
+ mix(p.count);mix(p.itemSize);mix(idx?.count||0);
+ for(let i=0;i<p.count;i++){
+  addFloat(p.getX(i));addFloat(p.getY(i));addFloat(p.getZ(i));
+ }
+ if(idx)for(let i=0;i<idx.count;i++)mix(idx.getX(i));
+ return a.toString(16).padStart(8,'0')+b.toString(16).padStart(8,'0');
 }
 export function encodeClothMask(mask,geo){
  const position=geo.getAttribute('position');
@@ -29,12 +40,12 @@ export function encodeClothMask(mask,geo){
    const start=i;while(i<mask.length&&mask[i])i++;
    runs.push([start,i-start]);
  }
- return {type:'phoenix-cloth-guard-v1',vertices:mask.length,signature:geometrySignature(geo),runs};
+ return {type:'phoenix-cloth-guard-v2',vertices:mask.length,signature:geometrySignature(geo),runs};
 }
 export function decodeClothMask(data,geo){
  const pos=geo?.getAttribute?.('position');
  if(!pos)throw Error('Отсутствуют вершины для маски');
- if(data?.type!=='phoenix-cloth-guard-v1'||data.vertices!==pos.count||
+ if(data?.type!=='phoenix-cloth-guard-v2'||data.vertices!==pos.count||
     data.signature!==geometrySignature(geo)||!Array.isArray(data.runs))
    throw Error('Маска одежды не совпадает с геометрией. Автовеса остановлены.');
  const result=new Uint8Array(pos.count);
@@ -53,17 +64,14 @@ export function clothProtection(mesh){
  if(!geo)return null;
  const data=mesh.userData?.pcsClothMask;
  if(!data)return null;
- const cached=masks.get(mesh);
- if(cached?.data===data&&cached?.geo===geo)return cached.mask;
- const mask=decodeClothMask(data,geo); // fail closed on stale/mismatched topology
- masks.set(mesh,{data,geo,mask});
- return mask;
+ // Always recheck geometry, even when BufferGeometry is the same object:
+ // edits may update vertex coordinates in place without replacing it.
+ return decodeClothMask(data,geo);
 }
 export function storeClothProtection(mesh,mask){
  if(!mesh?.geometry)throw Error('Нет геометрии');
  const data=encodeClothMask(mask,mesh.geometry);
  mesh.userData.pcsClothMask=data;
- masks.set(mesh,{data,geo:mesh.geometry,mask});
  return data;
 }
 export function countProtected(mask){let n=0;for(const v of mask||[])n+=v?1:0;return n}
