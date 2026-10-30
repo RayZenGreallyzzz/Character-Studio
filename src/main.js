@@ -222,15 +222,20 @@ async function exportGLB(){
  await saveBytes(new Uint8Array(result),`${safeName(state.baseName)}_Phoenix.glb`,'model/gltf-binary');
  say(`Экспорт: ${(result.byteLength/1048576).toFixed(2)} МБ · ${clips.length} анимаций`);
 }
-async function commitCharacterToRetarget(){
+async function saveCharacterToShared(){
  if(!window.PhoenixSuite?.saveBlob)throw Error('Общие GLB доступны в объединённом Android Forge.');
  const {result,clips}=await buildCharacterGLB();
  const saved=await window.PhoenixSuite.saveBlob(new Blob([result],{type:'model/gltf-binary'}),
-   `${safeName(state.baseName)}_Character_to_Retarget.glb`);
+   `${safeName(state.baseName)}_Phoenix_Character.glb`);
  if(!saved)throw Error('Не получилось сохранить общий GLB');
- say(`Персонаж сохранён в общий GLB, ${clips.length} клипов. Открываю Retarget.`);
+ say(`Общий персонаж обновлён · ${clips.length} анимаций`);
+ return true;
+}
+async function commitCharacterToRetarget(){
+ await saveCharacterToShared();
  window.PhoenixNative?.openTool('retarget');
 }
+window.PhoenixCharacterSave=saveCharacterToShared;
 window.PhoenixCharacterCommit=commitCharacterToRetarget;
 
 function bytesToBase64(arr){let s='';for(let i=0;i<arr.length;i+=32768)s+=String.fromCharCode(...arr.subarray(i,i+32768));return btoa(s);}
