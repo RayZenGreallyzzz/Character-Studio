@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {anatomicalFrame,anatomicalTargets} from '../src/rig-anatomy.js';
 import {addBoneChain,weightExistingSkin} from '../src/rig.js';
+import {connectedSurfaceIslands} from '../src/mesh-islands.js';
+import {storeClothProtection} from '../src/cloth-protection.js';
 
 function rig({rotation=0,mesh=true}={}){
   const root=new THREE.Group();
@@ -27,7 +29,7 @@ function rig({rotation=0,mesh=true}={}){
       ...Array.from({length:6},()=>[.9,.1,0,0]).flat()
     ],4));
     const skin=new THREE.SkinnedMesh(geo,new THREE.MeshBasicMaterial());
-    skin.userData.pcsMainSkin=true;root.add(skin);
+    skin.userData.pcsMainSkin=true;skin.userData.pcsBodySurface='all';root.add(skin);
     root.updateMatrixWorld(true);
     skin.bind(new THREE.Skeleton([hips,chest,head,L,R]),skin.matrixWorld.clone());
   }
@@ -89,4 +91,36 @@ test('breast skinning updates weights only on corresponding FRONT side and not b
     let s=0;for(let j=0;j<4;j++)s+=weights.getComponent(i,j);
     assert.ok(Math.abs(s-1)<1e-5);
   }
+});
+
+test('repainting breast on one disconnected island cannot repaint the other island of same skinned mesh',()=>{
+ const {root,chest}=rig();
+ const mesh=root.children.find(x=>x.isSkinnedMesh);
+ const analysis=connectedSurfaceIslands(mesh.geometry);
+ assert.equal(analysis.components.length,2);
+ mesh.userData.pcsBodySurface='0';
+ const before=Array.from(mesh.geometry.getAttribute('skinWeight').array);
+ const left=addBoneChain(root,chest,'breast',1,'L')[0];
+ const result=weightExistingSkin(root,left,{radius:.30,strength:.65});
+ assert.ok(result.vertices>0);
+ const after=mesh.geometry.getAttribute('skinWeight').array;
+ for(let v=0;v<analysis.componentByVertex.length;v++){
+  if(analysis.componentByVertex[v]===0)continue;
+  for(let j=0;j<4;j++)
+   assert.equal(after[v*4+j],before[v*4+j],'non-selected surface must retain original weights');
+ }
+});
+
+test('cloth-painted vertices retain original skin weights after breast auto skinning',()=>{
+ const {root,chest}=rig(),skin=root.children.find(x=>x.isSkinnedMesh);
+ const beforeJ=Array.from(skin.geometry.getAttribute('skinIndex').array.slice(0,4));
+ const beforeW=Array.from(skin.geometry.getAttribute('skinWeight').array.slice(0,4));
+ const cloth=new Uint8Array(skin.geometry.getAttribute('position').count);
+ cloth[0]=1;
+ storeClothProtection(skin,cloth);
+ const left=addBoneChain(root,chest,'breast',1,'L')[0];
+ const result=weightExistingSkin(root,left,{radius:.30,strength:.65});
+ assert.ok(result.vertices>0,'another unprotected breast vertex must still move');
+ assert.deepEqual(Array.from(skin.geometry.getAttribute('skinIndex').array.slice(0,4)),beforeJ);
+ assert.deepEqual(Array.from(skin.geometry.getAttribute('skinWeight').array.slice(0,4)),beforeW);
 });

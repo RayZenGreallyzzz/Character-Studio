@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import {connectedSurfaceIslands,allowsSurfaceVertex} from './mesh-islands.js';
+import {clothProtection} from './cloth-protection.js';
 import {anatomicalFrame,anatomicalTargets,pointAnatomyMask} from './rig-anatomy.js';
-import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles} from './rig-utils.js';
+import {uniqueBoneName,suggestParent,smoothWeight,normalizedTopFour,interpolateKeyframes,secondaryAngles,existingTorsoWeight,shouldApplyBreastWeight} from './rig-utils.js';
 
 export function getBones(root) {
   const bones=[];
@@ -99,13 +101,18 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
   const slot=bone.userData?.pcs?.slot||'other',side=bone.userData?.pcs?.side||'';
   let count=0, changedMeshes=0;
   for(const mesh of getSkins(root)) {
-    // Do not modify shared source geometry that other meshes may reference.
+    // Garments are skinned too: do not clone, rebind or touch their geometry.
+    if(!mesh.userData.pcsMainSkin) continue;
+    const chosenSurface=mesh.userData.pcsBodySurface;
+    if(chosenSurface===undefined||chosenSurface===null||chosenSurface==='')continue;
+    const surfaces=connectedSurfaceIslands(mesh.geometry);
+    if(surfaces.reason)continue; // fail closed: unknown surface => no repaint
+    if(chosenSurface!=='all'&&!surfaces.components.some(c=>c.id===Number(chosenSurface)))continue;
+    const protectedCloth=clothProtection(mesh); // verify unchanged topology; fail closed if stale
     if(!mesh.userData.pcsOwnGeometry){mesh.geometry=mesh.geometry.clone();mesh.userData.pcsOwnGeometry=true;}
     const geo=mesh.geometry;
     const si=geo.getAttribute('skinIndex'),sw=geo.getAttribute('skinWeight'),pos=geo.getAttribute('position');
     if(!si||!sw||!pos) continue;
-    // Exclude accessory meshes by design. Only preexisting body skins marked on import.
-    if(!mesh.userData.pcsMainSkin) continue;
     const currentBones=mesh.skeleton.bones;
     if(!currentBones.includes(bone)) {
       const all=[...currentBones,bone];
@@ -124,9 +131,13 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
         resultWeights[v*4+k]=read(sw,k);
       }
     }
-    const point=new THREE.Vector3();
+    const point=new THREE.Vector3(),parentPoint=new THREE.Vector3();
+    const boneNames=mesh.skeleton.bones.map(item=>item.name);
+    const parentInverse=bone.parent?.matrixWorld.clone().invert();
     let localCount=0;
     for(let v=0;v<pos.count;v++) {
+      if(!allowsSurfaceVertex(surfaces,v,chosenSurface))continue;
+      if(protectedCloth?.[v])continue; // absolutely preserve painted garment weights
       // Using vertex bind coordinates, not a deformed animated frame.
       point.fromBufferAttribute(pos,v).applyMatrix4(mesh.matrixWorld);
       const mask=pointAnatomyMask(point,frame,slot,side);
@@ -134,6 +145,13 @@ export function weightExistingSkin(root,bone,{radius=.18,strength=.55}={}) {
       if(w<.0005) continue;
       const base=[];
       for(let k=0;k<4;k++) base.push({bone:resultIds[v*4+k],weight:resultWeights[v*4+k]});
+      if(slot==='breast'){
+        const torso=existingTorsoWeight(base,boneNames);
+        if(parentInverse)parentPoint.copy(point).applyMatrix4(parentInverse);
+        if(!shouldApplyBreastWeight({
+          side,pointLocalX:parentPoint.x,boneLocalX:bone.position.x,torsoWeight:torso
+        }))continue;
+      }
       const weights=normalizedTopFour(base,boneIndex,w);
       for(let k=0;k<4;k++) {
         resultIds[v*4+k]=weights[k]?.bone ?? 0;
